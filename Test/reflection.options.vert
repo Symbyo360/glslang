@@ -20,11 +20,19 @@ buffer MultipleArrays {
     float f[5];
 } multiarray;
 
+buffer ArrayedBind {
+    float a;
+    float b;
+} buffers[3];
+
 uniform UBO {
     VertexInfo verts[2];
     float flt[8];
     uvec4 unused;
+    float uniform_multi[4][3][2];
 } ubo;
+
+uniform float uniform_multi[4][3][2];
 
 struct OutputStruct {
     float val;
@@ -47,6 +55,9 @@ void main()
     f += multiarray.f[gl_InstanceID];
     f += ubo.verts[gl_InstanceID].position[0];
     f += ubo.flt[gl_InstanceID];
+    f += ubo.uniform_multi[0][0][0];
+    f += uniform_multi[gl_InstanceID][gl_InstanceID][gl_InstanceID];
+    f += buffers[gl_InstanceID].b;
     TriangleInfo tlocal[5] = t;
     outval.val = f;
     outarr[2] = f;

@@ -166,29 +166,43 @@ int TPpContext::CPPdefine(TPpToken* ppToken)
     if (existing != nullptr) {
         if (! existing->undef) {
             // Already defined -- need to make sure they are identical:
-            // "Two replacement lists are identical if and only if the preprocessing tokens in both have the same number,
-            // ordering, spelling, and white-space separation, where all white-space separations are considered identical."
-            if (existing->functionLike != mac.functionLike)
-                parseContext.ppError(defineLoc, "Macro redefined; function-like versus object-like:", "#define", atomStrings.getString(defAtom));
-            else if (existing->args.size() != mac.args.size())
-                parseContext.ppError(defineLoc, "Macro redefined; different number of arguments:", "#define", atomStrings.getString(defAtom));
-            else {
-                if (existing->args != mac.args)
-                    parseContext.ppError(defineLoc, "Macro redefined; different argument names:", "#define", atomStrings.getString(defAtom));
+            // "Two replacement lists are identical if and only if the
+            // preprocessing tokens in both have the same number,
+            // ordering, spelling, and white-space separation, where all
+            // white-space separations are considered identical."
+            if (existing->functionLike != mac.functionLike) {
+                parseContext.ppError(defineLoc, "Macro redefined; function-like versus object-like:", "#define",
+                    atomStrings.getString(defAtom));
+            } else if (existing->args.size() != mac.args.size()) {
+                parseContext.ppError(defineLoc, "Macro redefined; different number of arguments:", "#define",
+                    atomStrings.getString(defAtom));
+            } else {
+                if (existing->args != mac.args) {
+                    parseContext.ppError(defineLoc, "Macro redefined; different argument names:", "#define",
+                       atomStrings.getString(defAtom));
+                }
+                // set up to compare the two
                 existing->body.reset();
                 mac.body.reset();
                 int newToken;
+                bool firstToken = true;
                 do {
                     int oldToken;
                     TPpToken oldPpToken;
                     TPpToken newPpToken;
                     oldToken = existing->body.getToken(parseContext, &oldPpToken);
                     newToken = mac.body.getToken(parseContext, &newPpToken);
+                    // for the first token, preceding spaces don't matter
+                    if (firstToken) {
+                        newPpToken.space = oldPpToken.space;
+                        firstToken = false;
+                    }
                     if (oldToken != newToken || oldPpToken != newPpToken) {
-                        parseContext.ppError(defineLoc, "Macro redefined; different substitutions:", "#define", atomStrings.getString(defAtom));
+                        parseContext.ppError(defineLoc, "Macro redefined; different substitutions:", "#define",
+                            atomStrings.getString(defAtom));
                         break;
                     }
-                } while (newToken > 0);
+                } while (newToken != EndOfInput);
             }
         }
         *existing = mac;
@@ -531,7 +545,7 @@ int TPpContext::evalToToken(int token, bool shortCircuit, int& res, bool& err, T
         case MacroExpandStarted:
             break;
         case MacroExpandUndef:
-            if (! shortCircuit && parseContext.profile == EEsProfile) {
+            if (! shortCircuit && parseContext.isEsProfile()) {
                 const char* message = "undefined macro in expression not allowed in es profile";
                 if (parseContext.relaxedErrors())
                     parseContext.ppWarn(ppToken->loc, message, "preprocessor evaluation", ppToken->name);
@@ -708,6 +722,7 @@ int TPpContext::CPPline(TPpToken* ppToken)
         parseContext.setCurrentLine(lineRes);
 
         if (token != '\n') {
+#ifndef GLSLANG_WEB
             if (token == PpAtomConstString) {
                 parseContext.ppRequireExtensions(directiveLoc, 1, &E_GL_GOOGLE_cpp_style_line_directive, "filename-based #line");
                 // We need to save a copy of the string instead of pointing
@@ -717,7 +732,9 @@ int TPpContext::CPPline(TPpToken* ppToken)
                 parseContext.setCurrentSourceName(sourceName);
                 hasFile = true;
                 token = scanToken(ppToken);
-            } else {
+            } else
+#endif
+            {
                 token = eval(token, MIN_PRECEDENCE, false, fileRes, fileErr, ppToken);
                 if (! fileErr) {
                     parseContext.setCurrentString(fileRes);
@@ -778,10 +795,8 @@ int TPpContext::CPPpragma(TPpToken* ppToken)
         case PpAtomConstUint:
         case PpAtomConstInt64:
         case PpAtomConstUint64:
-#ifdef AMD_EXTENSIONS
         case PpAtomConstInt16:
         case PpAtomConstUint16:
-#endif
         case PpAtomConstFloat:
         case PpAtomConstDouble:
         case PpAtomConstFloat16:
@@ -866,8 +881,7 @@ int TPpContext::CPPextension(TPpToken* ppToken)
     if (token != PpAtomIdentifier)
         parseContext.ppError(ppToken->loc, "extension name expected", "#extension", "");
 
-    assert(strlen(ppToken->name) <= MaxTokenLength);
-    strcpy(extensionName, ppToken->name);
+    snprintf(extensionName, sizeof(extensionName), "%s", ppToken->name);
 
     token = scanToken(ppToken);
     if (token != ':') {
@@ -941,18 +955,20 @@ int TPpContext::readCPPline(TPpToken* ppToken)
         case PpAtomIfndef:
             token = CPPifdef(0, ppToken);
             break;
+        case PpAtomLine:
+            token = CPPline(ppToken);
+            break;
+#ifndef GLSLANG_WEB
         case PpAtomInclude:
             if(!parseContext.isReadingHLSL()) {
                 parseContext.ppRequireExtensions(ppToken->loc, 1, &E_GL_GOOGLE_include_directive, "#include");
             }
             token = CPPinclude(ppToken);
             break;
-        case PpAtomLine:
-            token = CPPline(ppToken);
-            break;
         case PpAtomPragma:
             token = CPPpragma(ppToken);
             break;
+#endif
         case PpAtomUndef:
             token = CPPundef(ppToken);
             break;
